@@ -2,6 +2,7 @@
 using Quartz;
 using TicTakToe.Context;
 using TicTakToe.Entity.BaseModels;
+using TicTakToe.Entity.Models.Jobs;
 
 namespace TicTakToe.Jobs
 {
@@ -70,12 +71,17 @@ namespace TicTakToe.Jobs
 
                 if (gameForClose.Any())
                 {
+                    var usersUpdate = new List<User>();
+
                     foreach( var game in gameForClose)
                     {
-                        ReturnMoney(game);
+                        var usersMovment = await ReturnMoney(game);
+                        usersUpdate = ChangeMoney(usersUpdate, usersMovment);
+
                         game.Status = StatusGameEnum.GameFailed;
                     }
-                    _context.UpdateRange(gameForClose);
+                    _context.Users.UpdateRange(usersUpdate);
+                    _context.Games.UpdateRange(gameForClose);
                     await _context.SaveChangesAsync();
                 }
             }
@@ -85,9 +91,9 @@ namespace TicTakToe.Jobs
             }
         }
 
-        private async Task<List<User>> ReturnMoney(Game game)
+        private async Task<List<ReturnMoneyObj>> ReturnMoney(Game game)
         {
-            var usersUpdate = new List<User>();
+            var result = new List<ReturnMoneyObj>();
 
             var creater = await _context.Users
                 .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
@@ -97,18 +103,51 @@ namespace TicTakToe.Jobs
                 {
                     var joiner = await _context.Users
                         .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
-                    joiner.FreeCoin += game.PriceGame / 2;
-                    usersUpdate.Add(joiner);
-                    creater.FreeCoin += game.PriceGame / 2;
-                    usersUpdate.Add(creater);
+
+                    result.Add(new ReturnMoneyObj
+                    {
+                        Movment = game.PriceGame / 2,
+                        User = joiner
+                    });
+                    result.Add(new ReturnMoneyObj
+                    {
+                        Movment = game.PriceGame / 2,
+                        User = creater
+                    });
                 }
             }
             else
             {
-                usersUpdate.Add(creater);
-                creater.FreeCoin += game.PriceGame;
+
+                result.Add(new ReturnMoneyObj
+                {
+                    Movment = game.PriceGame,
+                    User = creater
+                });
             }
-            return usersUpdate;
+            return result;
+        }
+
+        private List<User> ChangeMoney(List<User> fullList, List<ReturnMoneyObj> newList)
+        {
+            foreach (var item in newList)
+            {
+                var user = fullList
+                    .FirstOrDefault(u => u.IdTg == item.User.IdTg);
+               
+                if (user == null)
+                {
+                    user = item.User;
+                    user.FreeCoin += item.Movment;
+
+                    fullList.Add(user);
+                }
+                else
+                {
+                    user.FreeCoin += item.Movment;
+                }
+            }
+            return fullList;
         }
     }
 }

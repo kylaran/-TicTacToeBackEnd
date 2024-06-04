@@ -30,7 +30,7 @@ namespace TicTakToe.Controllers
         /// <returns></returns>
         [HttpPost]
         [ProducesResponseType(typeof(UserVm), StatusCodes.Status200OK)]
-        public async Task<UserVm> userLogin([FromBody]UserDto user)
+        public async Task<UserVm> userLogin([FromBody] UserDto user)
         {
             try
             {
@@ -53,7 +53,8 @@ namespace TicTakToe.Controllers
                             _context.Update(checkUser);
                             await _context.SaveChangesAsync();
                         }
-                        else {
+                        else
+                        {
                             checkUser.First_name = user.first_name;
                             checkUser.Last_name = user.last_name;
                             checkUser.Username = user.username;
@@ -177,7 +178,7 @@ namespace TicTakToe.Controllers
 
         [HttpPost, Route("coin")]
         [ProducesResponseType(typeof(UserVm), StatusCodes.Status200OK)]
-        public async Task<UserVm> userLogin([FromBody]AddBalanceDto dto)
+        public async Task<UserVm> userLogin([FromBody] AddBalanceDto dto)
         {
             try
             {
@@ -205,7 +206,7 @@ namespace TicTakToe.Controllers
         /// <returns></returns>
         [HttpGet, Route("history")]
         [ProducesResponseType(typeof(GameHistoryVm), StatusCodes.Status200OK)]
-        public async Task<GameHistoryVm> userLogin([FromQuery]GameHistorySearchDto dto)
+        public async Task<GameHistoryVm> userLogin([FromQuery] GameHistorySearchDto dto)
         {
             try
             {
@@ -237,12 +238,12 @@ namespace TicTakToe.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex.Message); 
+                _logger.LogError(ex.Message);
                 return null;
             }
         }
-        
-        private async Task<string?> GetPhoto (int  userId)
+
+        private async Task<string?> GetPhoto(int userId)
         {
             var bot = new TelegramBotClient(TokenBot);
             var photos = await bot.GetUserProfilePhotosAsync(userId);

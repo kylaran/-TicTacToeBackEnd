@@ -115,7 +115,7 @@ namespace TicTakToe.Controllers
                             result.Status = SSEStatusEnum.Over;
                             result.Data = new OverDataVm
                             {
-                               statusGame = game.Status
+                                statusGame = game.Status
                             };
                         }
                     }
@@ -177,7 +177,7 @@ namespace TicTakToe.Controllers
                     }
                 }
             }
-            else 
+            else
             {
                 result.Status = SSEStatusEnum.Nothing;
                 result.NeedClose = true;

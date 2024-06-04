@@ -30,12 +30,12 @@ namespace TicTakToe.Controllers
         /// <returns></returns>
         [HttpPost]
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
-        public async Task<GameVm> CreateGame([FromBody]CreateGameDto dto)
+        public async Task<GameVm> CreateGame([FromBody] CreateGameDto dto)
         {
             try
             {
-                    var user = await _context.Users
-                    .FirstOrDefaultAsync(x => x.IdTg == dto.UserId);
+                var user = await _context.Users
+                .FirstOrDefaultAsync(x => x.IdTg == dto.UserId);
 
                 if (user == null)
                     return new GameVm();
@@ -87,7 +87,7 @@ namespace TicTakToe.Controllers
                         }
                         else
                         {
-                        
+
                             game.FirstStep = FirstStepEnum.Joiner;
                             var botMove = _bot.MakeMove(game, 0, game.FirstStep == FirstStepEnum.Creater ? CellEnum.Tac : CellEnum.Tic);
                             game.LastMoveDate = date;
@@ -124,7 +124,7 @@ namespace TicTakToe.Controllers
                 var participant = new ParticipantVm(user);
                 if (dto.WithBot)
                 {
-                    var bot = await _context.Users.FirstOrDefaultAsync(x => 
+                    var bot = await _context.Users.FirstOrDefaultAsync(x =>
                     x.IdTg == 0);
 
                     await Task.Delay(1000);
@@ -148,55 +148,56 @@ namespace TicTakToe.Controllers
         /// </summary>
         /// <param name="dto"></param>
         /// <response code="200">game object</response>
-        [HttpPost,Route("join")]
+        [HttpPost, Route("join")]
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
-        public async Task<GameVm> JoinGame([FromBody]JoinGameDto dto)
+        public async Task<GameVm> JoinGame([FromBody] JoinGameDto dto)
         {
             try
             {
                 var userJoin = await _context.Users
                 .FirstOrDefaultAsync(x => x.IdTg == dto.UserId);
 
-            userJoin.SeenChanges = false;
+                userJoin.SeenChanges = false;
 
-            var game = await _context.Games
+                var game = await _context.Games
                 .Include(t => t.Table)
                 .FirstOrDefaultAsync(x => x.Id == dto.GameId);
 
-            if (userJoin.FreeCoin < game.PriceGame)
-            {
-                return new GameVm();
-            }
-
-            if (game.FirstStep == FirstStepEnum.Random)
-            {
-                Random random = new Random();
-                if (random.Next(1, 3) == 1)
+                if (userJoin.FreeCoin < game.PriceGame)
                 {
-                    game.FirstStep = FirstStepEnum.Creater;
+                    return new GameVm();
                 }
-                else game.FirstStep = FirstStepEnum.Joiner;
-            }
-            userJoin.FreeCoin -= game.PriceGame;
-            game.PriceGame *= 2;
-            game.Status = StatusGameEnum.GameOn;
-            game.LastMoveDate = DateTime.UtcNow;
-            game.LastMoveFrom = userJoin.IdTg.Value;
-            game.ParticipantJoined = dto.UserId;
-            var userCreater = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
 
-            _context.Users.Update(userJoin);
-            _context.Games.Update(game);
-            await _context.SaveChangesAsync();
+                if (game.FirstStep == FirstStepEnum.Random)
+                {
+                    Random random = new Random();
+                    if (random.Next(1, 3) == 1)
+                    {
+                        game.FirstStep = FirstStepEnum.Creater;
+                    }
+                    else game.FirstStep = FirstStepEnum.Joiner;
+                }
+                userJoin.FreeCoin -= game.PriceGame;
+                game.PriceGame *= 2;
+                game.Status = StatusGameEnum.GameOn;
+                game.LastMoveDate = DateTime.UtcNow;
+                game.LastMoveFrom = userJoin.IdTg.Value;
+                game.ParticipantJoined = dto.UserId;
+                var userCreater = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
 
-            var participantCreater = new ParticipantVm(userCreater);
-            var participantJoined = new ParticipantVm(userJoin);
+                _context.Users.Update(userJoin);
+                _context.Games.Update(game);
+                await _context.SaveChangesAsync();
 
-            return new GameVm(game,participantCreater,participantJoined);
+                var participantCreater = new ParticipantVm(userCreater);
+                var participantJoined = new ParticipantVm(userJoin);
+
+                return new GameVm(game, participantCreater, participantJoined);
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "BotWin Request Exception");
                 return null;
             }
         }
@@ -247,27 +248,53 @@ namespace TicTakToe.Controllers
 
                 if (dto.IsMoveWin)
                 {
+                    var historyForSave = new List<GameHistory>();
                     game.Status = StatusGameEnum.GameOver;
                     if (userCreater.IdTg == dto.UserId)
                     {
-                        AddHistory(userCreater, userJoin, game, true);
-                        AddHistory(userJoin, userCreater, game, false);
+                        var history = await AddHistory(userCreater, userJoin, game, true);
+
+                        if (history != null)
+                            historyForSave.Add(history);
+
+                        history = null;
+                        history = await AddHistory(userJoin, userCreater, game, false);
+
+                        if (history != null)
+                            historyForSave.Add(history);
 
                         userCreater.FreeCoin += game.PriceGame;
-                        _context.Update(userCreater);
+                        _context.History.AddRange(historyForSave);
+                        _context.Users.Update(userCreater);
                     }
                     else
                     {
-                        AddHistory(userCreater, userJoin, game, false);
-                        AddHistory(userJoin, userCreater, game, true);
+                        var history = await AddHistory(userCreater, userJoin, game, false);
+                        if (history != null)
+                            historyForSave.Add(history);
+
+                        history = null;
+                        history = await AddHistory(userJoin, userCreater, game, true);
+                        if (history != null)
+                            historyForSave.Add(history);
+
                         userJoin.FreeCoin += game.PriceGame;
-                        _context.Update(userJoin);
+                        _context.History.AddRange(historyForSave);
+                        _context.Users.Update(userJoin);
                     }
                 }
                 if (dto.isDrawGame)
                 {
-                    AddHistory(userCreater, userJoin, game, true, true);
-                    AddHistory(userJoin, userCreater, game, true, true);
+                    var historyForSave = new List<GameHistory>();
+
+                    var history = await AddHistory(userCreater, userJoin, game, true, true);
+                    if (history != null)
+                        historyForSave.Add(history);
+
+                    history = null;
+                    history = await AddHistory(userJoin, userCreater, game, true, true);
+                    if (history != null)
+                        historyForSave.Add(history);
 
                     game.Status = StatusGameEnum.GameOverDraw;
                     userCreater.FreeCoin += game.PriceGame / 2;
@@ -288,7 +315,8 @@ namespace TicTakToe.Controllers
             }
             catch (Exception ex)
             {
-                return null; return null;
+                _logger.LogError(ex, "BotWin Request Exception");
+                return null;
             }
         }
 
@@ -301,66 +329,76 @@ namespace TicTakToe.Controllers
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
         public async Task<GameVm> MoveInGameWithBot([FromBody] MoveGameDto dto)
         {
-        try
-        {
-            var _bot = new Bot();
-            var game = await _context.Games
-                .Include(x => x.Table)
-                .FirstOrDefaultAsync(x => x.Id == dto.GameId);
-
-            game.LastMoveDate = DateTime.UtcNow;
-            game.LastMoveFrom = dto.UserId;
-            game.Table.Cells[dto.NumberCell] = dto.Cell;
-            game.LastMoveFromSee = false;
-            game.Status = StatusGameEnum.GameOn;
-
-            var userCreater = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
-            var userJoin = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
-
-            if (dto.IsMoveWin == false && dto.isDrawGame == false)
+            try
             {
-                var botMove = _bot.MakeMove(game, 0, game.FirstStep == FirstStepEnum.Creater? CellEnum.Tac : CellEnum.Tic);
+                var _bot = new Bot();
+                var game = await _context.Games
+                    .Include(x => x.Table)
+                    .FirstOrDefaultAsync(x => x.Id == dto.GameId);
 
                 game.LastMoveDate = DateTime.UtcNow;
-                game.LastMoveFrom = botMove.UserId;
-                game.LastMoveIndex = botMove.NumberCell;
+                game.LastMoveFrom = dto.UserId;
+                game.Table.Cells[dto.NumberCell] = dto.Cell;
+                game.LastMoveFromSee = false;
+                game.Status = StatusGameEnum.GameOn;
 
-                game.Table.Cells[botMove.NumberCell] = botMove.Cell;
+                var userCreater = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
+                var userJoin = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
 
+                if (dto.IsMoveWin == false && dto.isDrawGame == false)
+                {
+                    var botMove = _bot.MakeMove(game, 0, game.FirstStep == FirstStepEnum.Creater ? CellEnum.Tac : CellEnum.Tic);
+
+                    game.LastMoveDate = DateTime.UtcNow;
+                    game.LastMoveFrom = botMove.UserId;
+                    game.LastMoveIndex = botMove.NumberCell;
+
+                    game.Table.Cells[botMove.NumberCell] = botMove.Cell;
+
+                }
+
+                if (dto.IsMoveWin)
+                {
+                    game.Status = StatusGameEnum.GameOver;
+
+                    var history = await AddHistory(userJoin, userCreater, game, true);
+                    if (history != null)
+                    {
+                        _context.History.Update(history);
+                    }
+                }
+                if (dto.isDrawGame)
+                {
+                    game.Status = StatusGameEnum.GameOverDraw;
+                }
+
+                if (dto.isBotWin.HasValue && dto.isBotWin.Value == true)
+                {
+                    game.Status = StatusGameEnum.GameOver;
+                    var history = await AddHistory(userCreater, userJoin, game, false);
+                    if (history != null)
+                    {
+                        _context.History.Update(history);
+                    }
+                }
+
+                userCreater.SeenChanges = false;
+                _context.Users.Update(userCreater);
+                _context.Games.Update(game);
+                await _context.SaveChangesAsync();
+
+                await Task.Delay(1000);
+
+                var participantCreater = new ParticipantVm(userCreater);
+                var participantJoined = new ParticipantVm(userJoin);
+
+                return new GameVm(game, participantCreater, participantJoined);
             }
-
-            if (dto.IsMoveWin)
-            {
-                game.Status = StatusGameEnum.GameOver;
-                AddHistory(userJoin, userCreater, game, true);
-            }
-            if (dto.isDrawGame)
-            {
-                game.Status = StatusGameEnum.GameOverDraw;
-            }
-
-            if (dto.isBotWin.HasValue && dto.isBotWin.Value == true)
-            {
-                game.Status = StatusGameEnum.GameOver;
-                AddHistory(userCreater,userJoin, game, false);
-            }
-
-            userCreater.SeenChanges = false;
-            _context.Users.Update(userCreater);
-            _context.Games.Update(game);
-            await _context.SaveChangesAsync();
-
-            await Task.Delay(1000);
-
-            var participantCreater = new ParticipantVm(userCreater);
-            var participantJoined = new ParticipantVm(userJoin);
-
-            return new GameVm(game, participantCreater, participantJoined);
-        }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "BotWin Request Exception");
                 return null;
             }
         }
@@ -374,41 +412,43 @@ namespace TicTakToe.Controllers
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
         public async Task<GameVm> BotWinInGame([FromBody] BotWinDto dto)
         {
-        try
-        {
-            var _bot = new Bot();
-            var game = await _context.Games
-                .Include(x => x.Table)
-                .FirstOrDefaultAsync(x => x.Id == dto.GameId);
+            try
+            {
+                var _bot = new Bot();
+                var game = await _context.Games
+                    .Include(x => x.Table)
+                    .FirstOrDefaultAsync(x => x.Id == dto.GameId);
 
-            game.LastMoveDate = DateTime.UtcNow;
-            game.LastMoveFrom = 0;
-            game.LastMoveFromSee = false;
-            game.Status = StatusGameEnum.GameOn;
+                game.LastMoveDate = DateTime.UtcNow;
+                game.LastMoveFrom = 0;
+                game.LastMoveFromSee = false;
+                game.Status = StatusGameEnum.GameOn;
 
-            var userCreater = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
-            var userJoin = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
+                var userCreater = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
+                var userJoin = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
 
-            game.Status = dto.Status;
-            var history = await AddHistory(userCreater,userJoin, game, false);
+                game.Status = dto.Status;
+                var history = await AddHistory(userCreater, userJoin, game, false);
+                if (history != null)
+                    _context.History.Update(history);
 
+                userCreater.SeenChanges = false;
+                _context.Users.Update(userCreater);
+                _context.Games.Update(game);
+                await _context.SaveChangesAsync();
 
-            userCreater.SeenChanges = false;
-            _context.Users.Update(userCreater);
-            _context.Games.Update(game);
-            await _context.SaveChangesAsync();
+                await Task.Delay(1000);
 
-            await Task.Delay(1000);
+                var participantCreater = new ParticipantVm(userCreater);
+                var participantJoined = new ParticipantVm(userJoin);
 
-            var participantCreater = new ParticipantVm(userCreater);
-            var participantJoined = new ParticipantVm(userJoin);
-
-            return new GameVm(game, participantCreater, participantJoined);
-        }
+                return new GameVm(game, participantCreater, participantJoined);
+            }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "BotWin Request Exception");
                 return null;
             }
         }
@@ -424,45 +464,59 @@ namespace TicTakToe.Controllers
         {
             try
             {
-            var game = await _context.Games
-                .Include(x => x.Table)
-                .FirstOrDefaultAsync(x => x.Id == dto.GameId);
+                var game = await _context.Games
+                    .Include(x => x.Table)
+                    .FirstOrDefaultAsync(x => x.Id == dto.GameId);
 
-            game.Status = StatusGameEnum.GameFailed;
-            game.LastMoveDate = DateTime.UtcNow;
-            game.LastMoveFrom = dto.UserId;
+                game.Status = StatusGameEnum.GameFailed;
+                game.LastMoveDate = DateTime.UtcNow;
+                game.LastMoveFrom = dto.UserId;
 
-            var userIdWin = game.ParticipantCreater == dto.UserId ? dto.UserId : game.ParticipantJoined;
-            var userIdLose = dto.UserId;
+                var userIdWin = game.ParticipantCreater == dto.UserId ? dto.UserId : game.ParticipantJoined;
+                var userIdLose = dto.UserId;
 
-            var userWinner = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == userIdWin);
-            var userLoser = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == userIdLose);
+                var userWinner = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == userIdWin);
+                var userLoser = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == userIdLose);
 
-            if (game.ParticipantJoined != 0)
-            {
-                userWinner.FreeCoin += game.PriceGame / 2;
-                userLoser.FreeCoin -= game.PriceGame / 2;
-                AddHistory(userWinner, userLoser, game, true);
-                AddHistory(userLoser, userWinner, game, false);
-                _context.Update(userWinner);
-                _context.Update(userLoser);
+                if (game.ParticipantJoined != 0)
+                {
+                    var historyToSave = new List<GameHistory>();
+
+                    userWinner.FreeCoin += game.PriceGame / 2;
+                    userLoser.FreeCoin -= game.PriceGame / 2;
+
+                    var history = await AddHistory(userWinner, userLoser, game, true);
+                    if (history != null)
+                    {
+                        historyToSave.Add(history);
+                    }
+                    history = null;
+
+                    history = await AddHistory(userLoser, userWinner, game, false);
+                    if (history != null)
+                    {
+                        historyToSave.Add(history);
+                    }
+                    _context.History.UpdateRange(historyToSave);
+                    _context.Users.Update(userWinner);
+                    _context.Users.Update(userLoser);
+                }
+
+                _context.Games.Update(game);
+                await _context.SaveChangesAsync();
+
+                var participantCreater = new ParticipantVm(userIdWin == game.ParticipantCreater ? userWinner : userLoser);
+                var participantJoined = new ParticipantVm(participantCreater.UserId == userIdWin ? userLoser : userWinner);
+
+                return new GameVm(game, participantCreater, participantJoined);
             }
-
-            _context.Games.Update(game);
-                    await _context.SaveChangesAsync();
-
-            var participantCreater = new ParticipantVm(userIdWin == game.ParticipantCreater? userWinner: userLoser);
-            var participantJoined = new ParticipantVm(participantCreater.UserId == userIdWin? userLoser: userWinner);
-
-            return new GameVm(game, participantCreater, participantJoined);
-        }
             catch (Exception ex)
             {
                 return null;
             }
-}
+        }
 
         /// <summary>
         /// request if time over
@@ -495,17 +549,32 @@ namespace TicTakToe.Controllers
 
                 if (game.ParticipantJoined != 0)
                 {
-                    AddHistory(userWinner, userLoser, game, true);
-                    AddHistory(userLoser, userWinner, game, false);
+                    var historyToSave = new List<GameHistory>();
+
+                    var history = await AddHistory(userWinner, userLoser, game, true);
+                    if (history != null)
+                    {
+                        historyToSave.Add(history);
+                    }
+                    history = null;
+
+                    history = await AddHistory(userLoser, userWinner, game, false);
+                    if (history != null)
+                    {
+                        historyToSave.Add(history);
+                    }
+                    _context.History.UpdateRange(historyToSave);
 
                     userWinner.FreeCoin += game.PriceGame / 2;
                     userLoser.FreeCoin -= game.PriceGame / 2;
-                    _context.Update(userWinner);
-                    _context.Update(userLoser);
+
+                    _context.History.UpdateRange(historyToSave);
+                    _context.Users.Update(userWinner);
+                    _context.Users.Update(userLoser);
                 }
 
                 if (historyForSave.Count() > 0)
-                _context.Games.Update(game);
+                    _context.Games.Update(game);
                 await _context.SaveChangesAsync();
 
                 var participantCreater = new ParticipantVm(userIdWin == game.ParticipantCreater ? userWinner : userLoser);
@@ -528,37 +597,37 @@ namespace TicTakToe.Controllers
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
         public async Task<GameVm> GetGame(int gameId)
         {
-    try
-    {
-        var game = await _context.Games
-                .Include(x => x.Table)
-                .FirstOrDefaultAsync(x => x.Id == gameId);
-
-            var userCreater = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
-
-            if (game.ParticipantJoined != null)
+            try
             {
-                var userJoin = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
+                var game = await _context.Games
+                        .Include(x => x.Table)
+                        .FirstOrDefaultAsync(x => x.Id == gameId);
 
-                var participantCreater = new ParticipantVm(userCreater);
-                var participantJoined = new ParticipantVm(userJoin);
+                var userCreater = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
 
-                return new GameVm(game, participantCreater, participantJoined);
+                if (game.ParticipantJoined != null)
+                {
+                    var userJoin = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantJoined);
+
+                    var participantCreater = new ParticipantVm(userCreater);
+                    var participantJoined = new ParticipantVm(userJoin);
+
+                    return new GameVm(game, participantCreater, participantJoined);
+                }
+                else
+                {
+                    var participantCreater = new ParticipantVm(userCreater);
+
+                    return new GameVm(game, participantCreater, null);
+                }
             }
-            else
-            {
-                var participantCreater = new ParticipantVm(userCreater);
-
-                return new GameVm(game, participantCreater, null);
-            }
-        }
             catch (Exception ex)
             {
                 return null;
             }
-}
+        }
 
         /// <summary>
         /// Request for close game by id
@@ -569,34 +638,34 @@ namespace TicTakToe.Controllers
         [ProducesResponseType(typeof(GameVm), StatusCodes.Status200OK)]
         public async Task<object> CloseGameById(int gameId)
         {
-    try
-    {
-        var game = await _context.Games
-                .Include(x => x.Table)
-                .FirstOrDefaultAsync(x => x.Id == gameId);
-
-            var userCreater = await _context.Users
-                .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
-
-            if (game.ParticipantJoined == null)
+            try
             {
-                userCreater.FreeCoin += game.PriceGame;
-                game.Status = StatusGameEnum.GameClosed;
-                _context.Users.Update(userCreater);
-                _context.Games.Update(game);
-                await _context.SaveChangesAsync();
-                return true;
+                var game = await _context.Games
+                        .Include(x => x.Table)
+                        .FirstOrDefaultAsync(x => x.Id == gameId);
+
+                var userCreater = await _context.Users
+                    .FirstOrDefaultAsync(x => x.IdTg == game.ParticipantCreater);
+
+                if (game.ParticipantJoined == null)
+                {
+                    userCreater.FreeCoin += game.PriceGame;
+                    game.Status = StatusGameEnum.GameClosed;
+                    _context.Users.Update(userCreater);
+                    _context.Games.Update(game);
+                    await _context.SaveChangesAsync();
+                    return true;
+                }
+                else
+                {
+                    return BadRequest();
+                }
             }
-            else
-            {
-                return BadRequest();
-            }
-        }
             catch (Exception ex)
             {
                 return null;
             }
-}
+        }
 
         /// <summary>
         /// Request for search game
@@ -605,41 +674,41 @@ namespace TicTakToe.Controllers
         /// <returns></returns>
         [HttpGet, Route("list")]
         [ProducesResponseType(typeof(ListGamesVm), StatusCodes.Status200OK)]
-        public async Task<ListGamesVm> GetGames([FromQuery]SearchGameDto dto)
+        public async Task<ListGamesVm> GetGames([FromQuery] SearchGameDto dto)
         {
-        try
-        {
-            var result = new ListGamesVm();
-            result.filter = dto;
-            result.TotalCount = 0;
-            result.Take = 0;
-            result.Skip = 0;
-            result.Data = new List<GameInList>();
-            var games = _context.Games
-                .Include(x => x.Table)
-                .Where(x => x.Status == StatusGameEnum.WaitingOpponent &&
-                            x.Table.WallSize >= dto.WallSizeFrom &&
-                            x.Table.WallSize <= dto.WallSizeTo &&
-                            x.Table.WinSize >= dto.WinSizeFrom &&
-                            x.Table.WinSize <= dto.WinSizeTo &&
-                            x.ParticipantJoined == null)
-                .AsQueryable();
-
-            if (games.Count() > 0)
+            try
             {
-                result.TotalCount = games.Count();
-                result.Take = dto.Take;
-                result.Skip = dto.Skip;
+                var result = new ListGamesVm();
+                result.filter = dto;
+                result.TotalCount = 0;
+                result.Take = 0;
+                result.Skip = 0;
+                result.Data = new List<GameInList>();
+                var games = _context.Games
+                    .Include(x => x.Table)
+                    .Where(x => x.Status == StatusGameEnum.WaitingOpponent &&
+                                x.Table.WallSize >= dto.WallSizeFrom &&
+                                x.Table.WallSize <= dto.WallSizeTo &&
+                                x.Table.WinSize >= dto.WinSizeFrom &&
+                                x.Table.WinSize <= dto.WinSizeTo &&
+                                x.ParticipantJoined == null)
+                    .AsQueryable();
 
-                var gamesInList = await games.Take(dto.Take).Skip(dto.Skip).ToListAsync();
-
-                foreach(var game in gamesInList)
+                if (games.Count() > 0)
                 {
-                    var user = _context.Users.FirstOrDefault(x => x.IdTg == game.ParticipantCreater);
-                    result.Data.Add(new GameInList(game,user));
+                    result.TotalCount = games.Count();
+                    result.Take = dto.Take;
+                    result.Skip = dto.Skip;
+
+                    var gamesInList = await games.Take(dto.Take).Skip(dto.Skip).ToListAsync();
+
+                    foreach (var game in gamesInList)
+                    {
+                        var user = _context.Users.FirstOrDefault(x => x.IdTg == game.ParticipantCreater);
+                        result.Data.Add(new GameInList(game, user));
+                    }
                 }
-            }
-            return result;
+                return result;
             }
             catch (Exception ex)
             {
@@ -649,12 +718,13 @@ namespace TicTakToe.Controllers
 
         private CellEnum[] GenerateCells(int size)
         {
-            var cells = new CellEnum[size*size];
+            var cells = new CellEnum[size * size];
             for (int i = 0; i < cells.Length; i++)
                 cells[i] = CellEnum.None;
             return cells;
         }
-        private async Task<GameHistory?> AddHistory(User user,User userOponent, Game game, bool isWin, bool isDraw = false)
+
+        private async Task<GameHistory?> AddHistory(User? user, User? userOponent, Game game, bool isWin, bool isDraw = false)
         {
             var balanceGame = game.PriceGame;
             try
@@ -692,23 +762,23 @@ namespace TicTakToe.Controllers
                 _logger.LogError(ex.Message);
                 return null;
             }
-
         }
-        private async Task<bool> CheckHistory(User user, Game game)
+
+        private async Task<bool> CheckHistory(User? user, Game game)
         {
             var result = false;
             try
             {
-                    using (var scope = _scopeFactory.CreateScope())
-                    {
-                        var context = scope.ServiceProvider.GetRequiredService<TicTacToeDbContext>();
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<TicTacToeDbContext>();
                     var check = await context.History
                         .FirstOrDefaultAsync(x => x.GameId == game.Id && x.UserId == user.IdTg);
                     if (check != null)
                     {
                         result = true;
                     }
-                    }
+                }
 
                 return result;
             }

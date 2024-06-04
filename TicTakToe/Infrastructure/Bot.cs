@@ -21,7 +21,7 @@ namespace TicTakToe.Infrastructure
             {
                 if (cells[i] == CellEnum.None)
                 {
-                    cells[i] = cellBot; 
+                    cells[i] = cellBot;
                     if (IsWinningMove(cells, game.Table.WinSize, cellBot))
                     {
                         return new MoveGameDto
