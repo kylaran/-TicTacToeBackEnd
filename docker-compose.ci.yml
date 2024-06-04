@@ -1,0 +1,9 @@
+version: "3.7"
+
+services:
+  tictactoe.srvApp:
+    image: ${CI_REGISTRY_IMAGE}:${TAG}
+    build:
+      context: .
+      dockerfile: TicTakToe/Dockerfile
+
